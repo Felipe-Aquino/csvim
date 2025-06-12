@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_float, c_int, c_uint, c_void, CStr, CString};
+use std::ffi::{c_char, c_float, c_int, c_uint, c_void, CString};
 
 // Keyboard keys (US keyboard layout)
 // NOTE: Use GetKeyPressed() to allow redefining
@@ -132,11 +132,11 @@ pub struct Vector2 {
 }
 
 #[repr(C)]
-struct Rectangle {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+pub struct Rectangle {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 #[repr(C)]
@@ -152,9 +152,9 @@ struct Texture {
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct C_Font {
-    baseSize: i32,
-    glyphCount: i32,
-    glyphPadding: i32,
+    base_size: i32,
+    glyph_count: i32,
+    glyph_padding: i32,
 
     texture: Texture,
     recs: *const Rectangle,
@@ -174,9 +174,15 @@ unsafe extern "C" {
     fn BeginDrawing();
     fn EndDrawing();
     fn DrawRectangleRec(rec: Rectangle, color: Color);
-    fn DrawRectangle(posX: c_int, posY: c_int, width: c_int, height: c_int, color: Color);
-    fn DrawRectangleLines(posX: c_int, posY: c_int, width: c_int, height: c_int, color: Color);
-    fn DrawLine(startPosX: c_int, startPosY: c_int, endPosX: c_int, endPosY: c_int, color: Color);
+    fn DrawRectangle(pos_x: c_int, pos_y: c_int, width: c_int, height: c_int, color: Color);
+    fn DrawRectangleLines(pos_x: c_int, pos_y: c_int, width: c_int, height: c_int, color: Color);
+    fn DrawLine(
+        start_pos_x: c_int,
+        start_pos_y: c_int,
+        end_pos_x: c_int,
+        end_pos_y: c_int,
+        color: Color,
+    );
 
     fn BeginScissorMode(x: c_int, y: c_int, w: c_int, h: c_int);
     fn EndScissorMode();
@@ -253,16 +259,16 @@ pub fn draw_rectangle_rec(rec: Rectangle, color: Color) {
     unsafe { DrawRectangleRec(rec, color) };
 }
 
-pub fn draw_rectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) {
-    unsafe { DrawRectangle(posX, posY, width, height, color) };
+pub fn draw_rectangle(pos_x: i32, pos_y: i32, width: i32, height: i32, color: Color) {
+    unsafe { DrawRectangle(pos_x, pos_y, width, height, color) };
 }
 
-pub fn draw_rectangle_lines(posX: i32, posY: i32, width: i32, height: i32, color: Color) {
-    unsafe { DrawRectangleLines(posX, posY, width, height, color) };
+pub fn draw_rectangle_lines(pos_x: i32, pos_y: i32, width: i32, height: i32, color: Color) {
+    unsafe { DrawRectangleLines(pos_x, pos_y, width, height, color) };
 }
 
-pub fn draw_line(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) {
-    unsafe { DrawLine(startPosX, startPosY, endPosX, endPosY, color) };
+pub fn draw_line(start_pos_x: i32, start_pos_y: i32, end_pos_x: i32, end_pos_y: i32, color: Color) {
+    unsafe { DrawLine(start_pos_x, start_pos_y, end_pos_x, end_pos_y, color) };
 }
 
 pub fn draw_vertical_line(x: i32, y1: i32, y2: i32, color: Color) {
@@ -479,7 +485,7 @@ impl Font {
 
     pub fn draw_text(&self, text: &str, x: f32, y: f32, tint: Color) {
         let cstr = CString::new(text).unwrap().into_raw();
-        let size = self.c_font.baseSize as f32;
+        let size = self.c_font.base_size as f32;
 
         unsafe {
             DrawTextEx(
@@ -495,7 +501,7 @@ impl Font {
 
     pub fn measure_text(&self, text: &str) -> f32 {
         let cstr = CString::new(text).unwrap().into_raw();
-        let size = self.c_font.baseSize as f32;
+        let size = self.c_font.base_size as f32;
 
         unsafe { MeasureTextEx(self.c_font, cstr, size, self.spacing).x }
     }
@@ -513,6 +519,6 @@ pub fn is_key_pressed_repeat(key: KeyboardKey) -> bool {
     unsafe { IsKeyPressedRepeat(key as c_int) }
 }
 
-pub fn is_key_pressed_or_repeat(key: KeyboardKey) -> bool {
+pub fn is_key_pressed_or_repeated(key: KeyboardKey) -> bool {
     unsafe { IsKeyPressed(key as c_int) || IsKeyPressedRepeat(key as c_int) }
 }
