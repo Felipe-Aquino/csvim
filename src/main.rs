@@ -13,9 +13,12 @@ impl Buffer {
         Self { data, size: 0 }
     }
 
-    fn write_u32(&mut self, value: u32) {
-        self.size = 0;
+    fn write_u32(&mut self, value: u32, overwrite: bool) {
+        if overwrite {
+            self.size = 0;
+        }
 
+        let start = self.size;
         let mut v = value;
 
         loop {
@@ -31,10 +34,10 @@ impl Buffer {
             }
         }
 
-        for i in 0..self.size / 2 {
+        for i in start..(start + self.size) / 2 {
             let aux = self.data[i];
-            self.data[i] = self.data[self.size - 1 - i];
-            self.data[self.size - i - 1] = aux;
+            self.data[i] = self.data[self.size - 1 + start - i];
+            self.data[self.size - i + start - 1] = aux;
         }
     }
 
@@ -110,8 +113,9 @@ fn main() {
 
     let mut cell_default_height: i32 = 20;
 
-    let mut font = rl::Font::load_ttf_from_memory(FONT_DATA, 16, 1.0);
-    let mut font_bold = rl::Font::load_ttf_from_memory(BOLD_FONT_DATA, 16, 1.0);
+    let mut font_size = 16;
+    let mut font = rl::Font::load_ttf_from_memory(FONT_DATA, font_size, 1.0);
+    let mut font_bold = rl::Font::load_ttf_from_memory(BOLD_FONT_DATA, font_size, 1.0);
 
     let top_headers_height: i32 = 3 * cell_default_height / 2;
     let left_headers_width: i32 = 100 / 2;
@@ -129,7 +133,8 @@ fn main() {
         let screen_height = rl::get_screen_height();
 
         let column_count = (screen_width - left_headers_width) / CELL_DEFAULT_WIDTH;
-        let row_count = (screen_height - top_headers_height) / cell_default_height;
+        let row_count =
+            (screen_height - top_headers_height - cell_default_height) / cell_default_height;
 
         rl::begin_drawing();
 
@@ -166,9 +171,10 @@ fn main() {
                 cell_default_height = 20;
             }
 
-            font = rl::Font::load_ttf_from_memory(FONT_DATA, cell_default_height - 4, 1.0);
+            font_size = cell_default_height - 4;
+            font = rl::Font::load_ttf_from_memory(FONT_DATA, font_size, 1.0);
             font_bold =
-                rl::Font::load_ttf_from_memory(BOLD_FONT_DATA, cell_default_height - 4, 1.0);
+                rl::Font::load_ttf_from_memory(BOLD_FONT_DATA, font_size, 1.0);
             let new_column_count = (screen_width - left_headers_width) / CELL_DEFAULT_WIDTH;
             let new_row_count =
                 (screen_height - top_headers_height - cell_default_height) / cell_default_height;
@@ -225,13 +231,13 @@ fn main() {
         for i in 0..(row_count + 1) {
             let y = start_y + i * cell_default_height;
 
-            buffer.write_u32((row_offset + i + 1) as u32);
+            buffer.write_u32((row_offset + i + 1) as u32, true);
 
             let w = font.measure_text(buffer.as_str());
             font.draw_text(
                 buffer.as_str(),
                 (left_headers_width as f32 - w) / 2.0,
-                (y + (cell_default_height - 16) / 2) as f32,
+                (y + 2) as f32,
                 rl::Color::RAYWHITE,
             );
 
@@ -257,13 +263,40 @@ fn main() {
                     font.draw_text(
                         buffer.as_str(),
                         x as f32,
-                        (y + (cell_default_height - 16) / 2) as f32,
+                        (y + 2) as f32,
                         rl::Color::RAYWHITE,
                     );
                     rl::end_scissor_mode();
                 }
             }
         }
+
+        rl::draw_rectangle(
+            0,
+            screen_height - cell_default_height,
+            screen_width,
+            cell_default_height,
+            rl::Color::DEEPGRAY2,
+        );
+        rl::draw_rectangle_lines(
+            0,
+            screen_height - cell_default_height,
+            screen_width + 2,
+            cell_default_height + 2,
+            rl::Color::DIMGRAY,
+        );
+
+        buffer.write_letters_base26(current_cell_col as u32);
+        buffer.write_u32((current_cell_row + 1) as u32, false);
+
+        let w = font.measure_text(buffer.as_str());
+
+        font_bold.draw_text(
+            buffer.as_str(),
+            screen_width as f32 - w - 5.0,
+            (screen_height - cell_default_height + 2) as f32,
+            rl::Color::WHITE,
+        );
 
         let pos = (current_cell_row as usize, current_cell_col as usize);
 
@@ -277,10 +310,23 @@ fn main() {
             font_bold.draw_text(
                 buffer.as_str(),
                 x as f32,
-                (y + (cell_default_height - 16) / 2) as f32,
+                (y + 2) as f32,
                 rl::Color::BLACK,
             );
             rl::end_scissor_mode();
+
+            let x = CELL_PAD;
+            let y = screen_height - cell_default_height + 2;
+
+            rl::begin_scissor_mode(x, y, screen_width - 2 * CELL_PAD, cell_default_height);
+            font_bold.draw_text(
+                buffer.as_str(),
+                x as f32,
+                y as f32,
+                rl::Color::WHITE,
+            );
+            rl::end_scissor_mode();
+
         }
 
         rl::end_drawing();
