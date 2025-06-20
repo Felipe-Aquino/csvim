@@ -216,6 +216,7 @@ unsafe extern "C" {
     fn IsKeyPressedRepeat(key: c_int) -> bool;
     fn IsKeyDown(key: c_int) -> bool;
     fn GetCharPressed() -> c_int;
+    fn SetExitKey(key: c_int);
 }
 
 pub fn init_window(width: c_int, height: c_int, name: &str) {
@@ -534,4 +535,8 @@ pub fn get_char_pressed() -> Option<char> {
             char::from_u32(c as u32)
         }
     }
+}
+
+pub fn set_exit_key(key: KeyboardKey) {
+    unsafe { SetExitKey(key as i32) };
 }

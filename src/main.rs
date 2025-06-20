@@ -111,6 +111,7 @@ fn main() {
     rl::init_window(200, 200, "csvim");
 
     rl::set_target_fps(30);
+    rl::set_exit_key(rl::KeyboardKey::Null);
 
     let mut cell_default_height: i32 = 20;
 
@@ -134,6 +135,8 @@ fn main() {
     let mut search_buffer = Vec::<char>::new();
     let mut matched_cells: Vec<(usize, usize)> = Vec::new();
     let mut currently_matched = 0;
+
+    let mut cursor_offset = 0i32;
 
     while !rl::window_should_close() {
         let screen_width = rl::get_screen_width();
@@ -203,6 +206,7 @@ fn main() {
                 inserting = true;
 
                 search_buffer.clear();
+                cursor_offset = 0;
             } else if rl::is_key_pressed(rl::KeyboardKey::N) {
                 if matched_cells.len() > 0 {
                     currently_matched = (currently_matched + 1) % matched_cells.len();
@@ -270,11 +274,24 @@ fn main() {
                 }
 
                 println!("{} matches", matched_cells.len());
-            } else if rl::is_key_pressed(rl::KeyboardKey::Backspace) {
-                let _ = search_buffer.pop();
+            } else if rl::is_key_pressed_or_repeated(rl::KeyboardKey::Left) {
+                cursor_offset = (cursor_offset - 1).max(0);
+            } else if rl::is_key_pressed_or_repeated(rl::KeyboardKey::Right) {
+                cursor_offset = (cursor_offset + 1).min(search_buffer.len() as i32);
+            } else if rl::is_key_pressed_or_repeated(rl::KeyboardKey::Backspace) {
+                if cursor_offset > 0 {
+                    let _ = search_buffer.remove((cursor_offset - 1) as usize);
+                    cursor_offset -= 1;
+                }
             } else {
                 while let Some(c) = rl::get_char_pressed() {
-                    search_buffer.push(c);
+                    if cursor_offset as usize >= search_buffer.len() {
+                        search_buffer.push(c);
+                    } else {
+                        search_buffer.insert(cursor_offset as usize, c);
+                    }
+
+                    cursor_offset += 1;
                 }
             }
         }
@@ -423,6 +440,16 @@ fn main() {
             font.draw_text("/", x as f32, y as f32, rl::Color::WHITE);
             font.draw_text(data.as_str(), x as f32 + w2, y as f32, rl::Color::WHITE);
             rl::end_scissor_mode();
+
+            let s = data.as_str();
+            let s = if (cursor_offset as usize) < s.len() {
+                &s[..cursor_offset as usize]
+            } else {
+                s
+            };
+
+            let x = x + (w2 + font.measure_text(s)) as i32;
+            rl::draw_rectangle(x, y, 2, font_size, rl::Color::GREENYELLOW);
         }
 
         rl::end_drawing();
