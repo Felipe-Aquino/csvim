@@ -1051,45 +1051,32 @@ fn read_block_type0(stream: &mut Bitstream, bytes_window: &mut Vec<u8>) -> Resul
 
 pub fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
     let mut stream = Bitstream::new(data.to_vec());
-
-    let last_block = stream.readbits(1)?;
-
-    println!("last_block = {}", last_block == 1);
-
-    let method = Method::from_u16(stream.readbits(2)?);
-
-    println!("method = {:?}", method);
-
     let mut bytes_window = Vec::new();
 
-    match method {
-        Method::Stored => {
-            read_block_type0(&mut stream, &mut bytes_window)?;
+    loop {
+        let last_block = stream.readbits(1)? == 1;
+
+        let method = Method::from_u16(stream.readbits(2)?);
+
+        match method {
+            Method::Stored => {
+                read_block_type0(&mut stream, &mut bytes_window)?;
+            }
+            Method::Fixed => {
+                read_block_type1(&mut stream, &mut bytes_window)?;
+            }
+            Method::Dynamic => {
+                read_block_type2(&mut stream, &mut bytes_window)?;
+            }
+            Method::Invalid => unreachable!(),
         }
-        Method::Fixed => {
-            read_block_type1(&mut stream, &mut bytes_window)?;
+
+        if last_block {
+            break;
         }
-        Method::Dynamic => {
-            read_block_type2(&mut stream, &mut bytes_window)?;
-        }
-        Method::Invalid => unreachable!(),
     }
 
     Ok(bytes_window)
-}
-
-fn main() -> Result<(), String> {
-    // let data = vec![
-    //     243, 72, 205, 201, 201, 215, 81, 240, 192, 70, 85, 101, 22, 40, 114, 1, 0,
-    // ];
-
-    let data = vec![1, 8, 0, 247, 255, 82, 97, 119, 32, 68, 97, 116, 97];
-
-    let bytes_window = decompress(&data)?;
-
-    println!("result: {}", str::from_utf8(&bytes_window[..]).unwrap());
-
-    Ok(())
 }
 
 #[cfg(test)]
