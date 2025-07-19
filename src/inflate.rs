@@ -32,7 +32,7 @@ enum LLValue {
     Len(usize, usize, usize),
 }
 
-use LLValue::*;
+use self::LLValue::*;
 
 static CODE_TO_LL_MAP: [LLValue; 512] = [
     EOB,
