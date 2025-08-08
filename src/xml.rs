@@ -1,15 +1,33 @@
-/*
-struct Loc {
-    line: usize,
-    column: usize,
+pub struct Loc {
+    pub line: usize,
+    pub column: usize,
 }
 
-enum XMLError {
-    Expecting { what: &str, loc: Loc },
-    EndOfFile { when: &str },
-    Invalid { what: &str, loc: Loc },
+pub enum XMLError {
+    Expecting { what: &'static str, loc: Loc },
+    EndOfFile { when: &'static str },
+    Invalid { what: &'static str, loc: Loc },
+    InternalError { what: &'static str },
 }
-*/
+
+impl std::fmt::Display for XMLError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            XMLError::Expecting { what, loc } => {
+                write!(f, "{}:{}: expecting {what}", loc.line, loc.column)
+            }
+            XMLError::EndOfFile { when } => {
+                write!(f, "end of file when {when}")
+            }
+            XMLError::Invalid { what, loc } => {
+                write!(f, "{}:{}: invalid xml when {what}", loc.line, loc.column)
+            }
+            XMLError::InternalError { what } => {
+                write!(f, "{what}")
+            }
+        }
+    }
+}
 
 fn is_utf8_continuation(c: u8) -> bool {
     c & 0x80 != 0
@@ -34,11 +52,18 @@ fn is_alpha(c: u8) -> bool {
 struct Reader {
     data: Vec<u8>,
     cursor: usize,
+    column: usize,
+    line: usize,
 }
 
 impl Reader {
     fn new(data: Vec<u8>) -> Self {
-        Self { data, cursor: 0 }
+        Self {
+            data,
+            cursor: 0,
+            column: 1,
+            line: 1
+        }
     }
 
     // End of bytes
@@ -54,8 +79,28 @@ impl Reader {
                 break;
             }
 
-            self.cursor += 1;
+            self.advance();
         }
+    }
+
+    // Advances without checking eob
+    fn advance(&mut self) {
+        let c = self.data[self.cursor];
+
+        if c == b'\n' {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
+
+        self.cursor += 1;
+    }
+    
+    // Advances without checking lines and eob
+    fn raw_advance_n(&mut self, n: usize) {
+        self.cursor += n;
+        self.column += n;
     }
 
     // Test if the next bytes match the input sequence
@@ -74,7 +119,7 @@ impl Reader {
     }
 
     fn read_byte(&mut self) -> u8 {
-        self.cursor += 1;
+        self.advance();
 
         self.data[self.cursor - 1]
     }
@@ -94,6 +139,13 @@ impl Reader {
             (0, 0)
         }
     }
+
+    fn get_loc(&self) -> Loc {
+        Loc {
+            line: self.line,
+            column: self.column,
+        }
+    }
 }
 
 // -- Attribute
@@ -110,7 +162,7 @@ impl Attribute {
 }
 
 #[derive(Debug)]
-enum Component {
+pub enum Component {
     Comment(String),
     Declaration {
         version: String,
@@ -141,9 +193,9 @@ fn is_name_char(c: u8) -> bool {
     is_start_name_char(c) || c == b'-' || c == b'.'
 }
 
-fn parse_name(reader: &mut Reader) -> Result<String, String> {
+fn parse_name(reader: &mut Reader) -> Result<String, XMLError> {
     if reader.eob() {
-        return Err(String::from("parse_name: Reader EOB!"));
+        return Err(XMLError::EndOfFile { when: "parsing a name" });
     }
 
     let start = reader.cursor;
@@ -151,7 +203,10 @@ fn parse_name(reader: &mut Reader) -> Result<String, String> {
     let c = reader.read_byte();
 
     if !is_start_name_char(c) {
-        return Err(String::from("parse_name: Element name start not found!"));
+        return Err(XMLError::Expecting {
+            what: "':', '_', or a letter",
+            loc: reader.get_loc(),
+        })
     }
 
     while !reader.eob() {
@@ -165,7 +220,7 @@ fn parse_name(reader: &mut Reader) -> Result<String, String> {
             break;
         }
 
-        reader.cursor += 1;
+        reader.advance();
     }
 
     let v = str::from_utf8(reader.data[start..reader.cursor].into());
@@ -173,14 +228,13 @@ fn parse_name(reader: &mut Reader) -> Result<String, String> {
     Ok(v.unwrap().to_string())
 }
 
-fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, String> {
+fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, XMLError> {
     if end_marker.len() == 0 {
-        return Err(String::from("parse_text: Reader EOB!"));
+        return Err(XMLError::EndOfFile { when: "parsing a text" });
     }
 
     let start = reader.cursor;
 
-    // println!("marker: {}", end_marker[0] as char);
     while !reader.eob() {
         if reader.sequece_match(end_marker) {
             let v = str::from_utf8(reader.data[start..reader.cursor].into());
@@ -188,49 +242,55 @@ fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, String> 
             return Ok(v.unwrap().to_string());
         }
 
-        reader.cursor += 1;
+        reader.advance();
     }
 
-    Err(String::from("parse_text: Reader EOB 2!"))
+    Err(XMLError::EndOfFile { when: "parsing a text the marker was not found" })
 }
 
-fn parse_attribute(reader: &mut Reader) -> Result<Attribute, String> {
+fn parse_attribute(reader: &mut Reader) -> Result<Attribute, XMLError> {
     let name = parse_name(reader)?;
 
     reader.skip_white_spaces();
 
     if !reader.sequece_match(b"=") {
-        return Err(String::from("parse_attribute: expecting '='"));
+        return Err(XMLError::Expecting {
+            what: "'='",
+            loc: reader.get_loc(),
+        });
     }
 
-    reader.cursor += 1;
+    reader.raw_advance_n(1);
 
     reader.skip_white_spaces();
 
     if reader.eob() {
-        return Err(String::from("parse_attribute: unexpected EOB!"));
+        return Err(XMLError::EndOfFile { when: "parsing an attribute" });
     }
 
     let c = reader.read_byte();
 
     if c != b'"' && c != b'\'' {
-        return Err(String::from("parse_attribute: expectin \" or '."));
+        return Err(XMLError::Expecting {
+            what: "'\"' or `'`",
+            loc: reader.get_loc(),
+        })
     }
 
     let value = parse_text(reader, &[c])?;
 
-    reader.cursor += 1;
+    reader.raw_advance_n(1);
 
     Ok(Attribute::new(name, value))
 }
 
 // -- Document
-struct Document {
-    children: Vec<Component>,
+pub struct Document {
+    pub children: Vec<Component>,
 }
 
 impl Document {
-    pub fn from_data(data: Vec<u8>) -> Result<Document, String> {
+    pub fn from_data(data: Vec<u8>) -> Result<Document, XMLError> {
         let mut doc = Document {
             children: Vec::new(),
         };
@@ -253,7 +313,7 @@ impl Document {
         c: Component,
         is_open: bool,
         stack: &mut Vec<Component>,
-    ) -> Result<(), String> {
+    ) -> Result<(), XMLError> {
         let is_element = match c {
             Component::Element { .. } => true,
             _ => false,
@@ -269,7 +329,9 @@ impl Document {
             match e {
                 Component::Element { children, .. } => children.push(c),
                 _ => {
-                    return Err(String::from("parse: Component in stack is not an element!"));
+                    return Err(XMLError::InternalError {
+                        what: "component in stack is not an element!"
+                    });
                 }
             }
         } else {
@@ -279,7 +341,7 @@ impl Document {
         Ok(())
     }
 
-    fn parse(&mut self, data: Vec<u8>) -> Result<(), String> {
+    fn parse(&mut self, data: Vec<u8>) -> Result<(), XMLError> {
         let mut reader = Reader::new(data);
 
         let mut stack: Vec<Component> = Vec::new();
@@ -288,19 +350,23 @@ impl Document {
             reader.skip_white_spaces();
 
             if reader.sequece_match(b"<?") {
-                reader.cursor += 2;
+                reader.raw_advance_n(2);
 
                 if !reader.sequece_match(b"xml") {
-                    return Err(String::from("parse: Invalid declaration!"));
+                    return Err(XMLError::Invalid {
+                        what: "invalid declaration, expecting 'xml'",
+                        loc: reader.get_loc(),
+                    });
                 }
-
-                reader.cursor += 3;
 
                 if self.children.len() > 0 {
-                    return Err(String::from(
-                    "parse: There must only one declaration in xml file, and must be the first element!"
-                ));
+                    return Err(XMLError::Invalid {
+                        what: "it must have only one xml declaration and it must be the first element in file",
+                        loc: reader.get_loc(),
+                    });
                 }
+
+                reader.raw_advance_n(3);
 
                 reader.skip_white_spaces();
 
@@ -316,20 +382,25 @@ impl Document {
 
                     match reader.peek_2bytes() {
                         (0, 0) => {
-                            return Err(String::from("parse: Reader EOB 3!"));
+                            return Err(XMLError::EndOfFile {
+                                when: "reading tag and its attributes",
+                            });
                         }
                         (b'?', b'>') => {
-                            reader.cursor += 2;
+                            reader.raw_advance_n(2);
                             break;
                         }
                         _ => {
+                            let loc0 = reader.get_loc();
+
                             let attr = parse_attribute(&mut reader)?;
 
                             if attr_count == 0 {
                                 if attr.name != "version" {
-                                    return Err(String::from(
-                                        "parse: expecting 'version' attribute in xml declation!",
-                                    ));
+                                    return Err(XMLError::Expecting {
+                                        what: "'version' attribute in xml declation",
+                                        loc: loc0,
+                                    });
                                 }
 
                                 version = attr.value;
@@ -340,21 +411,24 @@ impl Document {
                                     standalone = attr.value == "yes";
                                     attr_count += 1;
                                 } else {
-                                    return Err(String::from(
-                                    "parse: expecting 'encoding' or 'standalone' attribute in xml declation!",
-                                ));
+                                    return Err(XMLError::Expecting {
+                                        what: "'encoding' or 'standalone' attribute in xml declation",
+                                        loc: loc0,
+                                    });
                                 }
                             } else if attr_count == 2 {
                                 if attr.name != "standalone" {
-                                    return Err(String::from(
-                                        "parse: expecting 'standalone' attribute in xml declation!",
-                                    ));
+                                    return Err(XMLError::Expecting {
+                                        what: "'standalone' attribute in xml declation",
+                                        loc: loc0,
+                                    });
                                 }
                                 standalone = attr.value == "yes";
                             } else {
-                                return Err(String::from(
-                                    "parse: reading too many attributes in xml declation!",
-                                ));
+                                return Err(XMLError::Invalid {
+                                    what: "too many attributes in xml declation",
+                                    loc: loc0,
+                                });
                             }
 
                             attr_count += 1;
@@ -372,19 +446,19 @@ impl Document {
                     &mut stack,
                 )?;
             } else if reader.sequece_match(b"<!--") {
-                reader.cursor += 4;
+                reader.raw_advance_n(4);
 
                 let text = parse_text(&mut reader, b"-->")?;
 
-                reader.cursor += 3;
+                reader.raw_advance_n(3);
 
                 self.add_component(Component::Comment(text), false, &mut stack)?;
             } else if reader.sequece_match(b"<![CDATA[") {
-                reader.cursor += 9;
+                reader.raw_advance_n(9);
 
                 let text = parse_text(&mut reader, b"]]>")?;
 
-                reader.cursor += 3;
+                reader.raw_advance_n(3);
 
                 self.add_component(
                     Component::Text {
@@ -395,50 +469,65 @@ impl Document {
                     &mut stack,
                 )?;
             } else if reader.sequece_match(b"<!") {
-                reader.cursor += 2;
+                reader.raw_advance_n(2);
 
                 let text = parse_text(&mut reader, b">")?;
 
-                reader.cursor += 1;
+                reader.raw_advance_n(1);
 
                 self.add_component(Component::Other(text), false, &mut stack)?;
             } else if reader.sequece_match(b"</") {
-                reader.cursor += 2;
+                let loc0 = reader.get_loc();
+
+                reader.raw_advance_n(2);
 
                 let name = parse_name(&mut reader)?;
 
                 reader.skip_white_spaces();
 
                 if reader.eob() {
-                    return Err(String::from("parse: Reader EOB 2!"));
+                    return Err(XMLError::EndOfFile {
+                        when: "reading a closing tag",
+                    });
                 }
 
-                let c = reader.read_byte();
+                let c = reader.peek_byte();
 
                 if c != b'>' {
-                    return Err(String::from("parse: Element tag end closenot found!"));
+                    return Err(XMLError::Expecting {
+                        what: "'>' to be closing the tag end",
+                        loc: reader.get_loc(), 
+                    });
                 }
+
+                reader.advance();
 
                 if let Some(e) = stack.pop() {
                     match e {
                         Component::Element { name: ref n, .. } => {
                             if *n != name {
-                                return Err(String::from("parse: Unmatched tag end"));
+                                return Err(XMLError::Invalid {
+                                    what: "unmatched tag end",
+                                    loc: loc0,
+                                });
                             }
                         }
                         _ => {
-                            return Err(String::from(
-                                "parse: Component in stack is not an element!",
-                            ));
+                            return Err(XMLError::InternalError {
+                                what: "component in stack is not an element!",
+                            });
                         }
                     }
 
                     self.children.push(e);
                 } else {
-                    return Err(String::from("parse: Unexpected tag end found"));
+                    return Err(XMLError::Invalid {
+                        what: "unexpected tag end found",
+                        loc: loc0,
+                    });
                 }
             } else if reader.sequece_match(b"<") {
-                reader.cursor += 1;
+                reader.raw_advance_n(1);
 
                 let mut attributes = Vec::new();
                 let name = parse_name(&mut reader)?;
@@ -448,10 +537,12 @@ impl Document {
 
                     match reader.peek_2bytes() {
                         (0, 0) => {
-                            return Err(String::from("parse: Reader EOB 3!"));
+                            return Err(XMLError::EndOfFile {
+                                when: "reading tag closing or its attributes",
+                            });
                         }
                         (b'>', _) => {
-                            reader.cursor += 1;
+                            reader.raw_advance_n(1);
 
                             self.add_component(
                                 Component::Element {
@@ -466,7 +557,7 @@ impl Document {
                             break;
                         }
                         (b'/', b'>') => {
-                            reader.cursor += 2;
+                            reader.raw_advance_n(2);
 
                             self.add_component(
                                 Component::Element {
@@ -501,25 +592,5 @@ impl Document {
         }
 
         Ok(())
-    }
-}
-
-fn main() {
-    let data = b"
-        <?xml version='1.1' encoding='UTF-16' standalone='yes' ?>
-        <!ENTITY   rights \"All rights reserved\" >
-        <!-- input -->
-        <input />
-        <tag abra=\"cadabra\">text</tag>
-        <![CDATA[<greeting>Hello, world!</greeting>]]>
-    ";
-
-    println!("data size: {}", data.len());
-
-    match Document::from_data(data.into()) {
-        Ok(doc) => doc.print_components(),
-        Err(err) => {
-            println!("{err}");
-        }
     }
 }
