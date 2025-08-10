@@ -1,7 +1,10 @@
+#![allow(dead_code)]
+
 use std::convert::TryInto;
 use std::fs;
 
-mod inflate;
+pub mod inflate;
+// use inflate;
 
 struct Reader {
     data: Vec<u8>,
@@ -11,25 +14,6 @@ struct Reader {
 impl Reader {
     fn new(data: Vec<u8>) -> Self {
         Self { data, cursor: 0 }
-    }
-
-    fn find_prefix(&self, prefix: &[u8]) -> Option<usize> {
-        for i in self.cursor..(self.data.len() - prefix.len()) {
-            let mut found = true;
-
-            for (j, v) in prefix.iter().enumerate() {
-                if *v != self.data[i + j] {
-                    found = false;
-                    break;
-                }
-            }
-
-            if found {
-                return Some(i);
-            }
-        }
-
-        None
     }
 
     // Finds the first occurence of the prefix in the data, starting from the end until
@@ -53,12 +37,6 @@ impl Reader {
         None
     }
 
-    fn read_byte(&mut self) -> u8 {
-        self.cursor += 1;
-
-        self.data[self.cursor - 1]
-    }
-
     fn read_u16(&mut self) -> Option<u16> {
         let r: Result<[u8; 2], _> = self.data[self.cursor..(self.cursor + 2)].try_into();
 
@@ -68,7 +46,7 @@ impl Reader {
 
                 Some(u16::from_le_bytes(bytes))
             }
-            Err(e) => None,
+            Err(_) => None,
         }
     }
 
@@ -81,15 +59,6 @@ impl Reader {
 
                 Some(u32::from_le_bytes(bytes))
             }
-            Err(_) => None,
-        }
-    }
-
-    fn peek_u32(&mut self) -> Option<u32> {
-        let r: Result<[u8; 4], _> = self.data[self.cursor..(self.cursor + 4)].try_into();
-
-        match r {
-            Ok(bytes) => Some(u32::from_le_bytes(bytes)),
             Err(_) => None,
         }
     }
@@ -135,7 +104,7 @@ struct LocalFileHeader {
 }
 
 impl LocalFileHeader {
-    fn from_reader(reader: &mut Reader) -> Option<Self> {
+    fn from_reader(reader: &mut Reader, cdh: &CentralDirectoryHeader) -> Option<Self> {
         let signature = reader.read_u32()?;
 
         if signature != 0x04034b50 {
@@ -161,11 +130,15 @@ impl LocalFileHeader {
         reader.cursor += file_name_len as usize;
         reader.cursor += extra_len as usize;
 
+        // TODO: For some reason the compressed_size, uncompressed_size and crc32
+        // can be zero, but they are not zero in CentralDirectoryHeader
         let data = if compression != 8 {
-            reader.read_vec(compressed_size as usize)?
+            reader.read_vec(cdh.compressed_size as usize)?
+        } else if cdh.uncompressed_size == 0 {
+            Vec::new()
         } else {
-            let content = reader.read_vec(compressed_size as usize)?;
-            inflate::decompress(&content).ok()?
+            let content = reader.read_vec(cdh.compressed_size as usize)?;
+            inflate::decompress(&content).unwrap()
         };
 
         Some(Self {
@@ -300,8 +273,8 @@ pub struct Zip {
 
 #[derive(Debug)]
 pub struct ZipFile {
-    name: String,
-    content: String,
+    pub name: String,
+    pub content: String,
 }
 
 impl Zip {
@@ -327,7 +300,7 @@ impl Zip {
             let saved_cursor = reader.cursor;
 
             reader.cursor = cdh.offset as usize;
-            let lfh = LocalFileHeader::from_reader(&mut reader)?;
+            let lfh = LocalFileHeader::from_reader(&mut reader, &cdh)?;
 
             reader.cursor = saved_cursor;
 
@@ -342,7 +315,7 @@ impl Zip {
         })
     }
 
-    fn extract_files(&self) -> Result<Vec<ZipFile>, std::str::Utf8Error> {
+    pub fn extract_files(&self) -> Result<Vec<ZipFile>, std::str::Utf8Error> {
         let mut files = Vec::new();
 
         for i in 0..self.central_directory_headers.len() {

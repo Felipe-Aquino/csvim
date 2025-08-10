@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+
+#[derive(Debug)]
 pub struct Loc {
     pub line: usize,
     pub column: usize,
 }
 
+#[derive(Debug)]
 pub enum XMLError {
     Expecting { what: &'static str, loc: Loc },
     EndOfFile { when: &'static str },
@@ -62,7 +66,7 @@ impl Reader {
             data,
             cursor: 0,
             column: 1,
-            line: 1
+            line: 1,
         }
     }
 
@@ -96,7 +100,7 @@ impl Reader {
 
         self.cursor += 1;
     }
-    
+
     // Advances without checking lines and eob
     fn raw_advance_n(&mut self, n: usize) {
         self.cursor += n;
@@ -148,19 +152,6 @@ impl Reader {
     }
 }
 
-// -- Attribute
-#[derive(Debug)]
-struct Attribute {
-    name: String,
-    value: String,
-}
-
-impl Attribute {
-    fn new(name: String, value: String) -> Self {
-        Self { name, value }
-    }
-}
-
 #[derive(Debug)]
 pub enum Component {
     Comment(String),
@@ -171,7 +162,7 @@ pub enum Component {
     },
     Element {
         name: String,
-        attributes: Vec<Attribute>,
+        attributes: HashMap<String, String>,
         children: Vec<Component>,
     },
     Text {
@@ -183,6 +174,52 @@ pub enum Component {
     Other(String),
 }
 
+impl Component {
+    pub fn children(&self) -> Option<&Vec<Component>> {
+        match self {
+            Component::Element { children, .. } => Some(&children),
+            _ => None,
+        }
+    }
+
+    pub fn children_unchecked(&self) -> &Vec<Component> {
+        match self {
+            Component::Element { children, .. } => &children,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn filter_elements<'a>(
+        &'a self,
+        elem_name: &'a str,
+    ) -> Box<dyn Iterator<Item = &'a Component> + 'a> {
+        match self {
+            Component::Element { children, .. } => {
+                Box::new(children.iter().filter(move |item| match item {
+                    Component::Element { name, .. } => name.as_str() == elem_name,
+                    _ => false,
+                }))
+            }
+            _ => Box::new(std::iter::empty()),
+        }
+    }
+
+    pub fn find_element(&self, elem_name: &str) -> Option<&Component> {
+        match self {
+            Component::Element { children, .. } => children.iter().find(move |item| match item {
+                Component::Element { name, .. } => name.as_str() == elem_name,
+                _ => false,
+            }),
+            _ => None,
+        }
+    }
+}
+
+#[inline]
+fn is_digit(c: u8) -> bool {
+    b'0' <= c && c < b'9'
+}
+
 #[inline]
 fn is_start_name_char(c: u8) -> bool {
     c > 128 || is_alpha(c) || c == b':' || c == b'_'
@@ -190,12 +227,14 @@ fn is_start_name_char(c: u8) -> bool {
 
 #[inline]
 fn is_name_char(c: u8) -> bool {
-    is_start_name_char(c) || c == b'-' || c == b'.'
+    is_start_name_char(c) || is_digit(c) || c == b'-' || c == b'.'
 }
 
 fn parse_name(reader: &mut Reader) -> Result<String, XMLError> {
     if reader.eob() {
-        return Err(XMLError::EndOfFile { when: "parsing a name" });
+        return Err(XMLError::EndOfFile {
+            when: "parsing a name",
+        });
     }
 
     let start = reader.cursor;
@@ -206,7 +245,7 @@ fn parse_name(reader: &mut Reader) -> Result<String, XMLError> {
         return Err(XMLError::Expecting {
             what: "':', '_', or a letter",
             loc: reader.get_loc(),
-        })
+        });
     }
 
     while !reader.eob() {
@@ -230,7 +269,9 @@ fn parse_name(reader: &mut Reader) -> Result<String, XMLError> {
 
 fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, XMLError> {
     if end_marker.len() == 0 {
-        return Err(XMLError::EndOfFile { when: "parsing a text" });
+        return Err(XMLError::EndOfFile {
+            when: "parsing a text",
+        });
     }
 
     let start = reader.cursor;
@@ -245,10 +286,12 @@ fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, XMLError
         reader.advance();
     }
 
-    Err(XMLError::EndOfFile { when: "parsing a text the marker was not found" })
+    Err(XMLError::EndOfFile {
+        when: "parsing a text the marker was not found",
+    })
 }
 
-fn parse_attribute(reader: &mut Reader) -> Result<Attribute, XMLError> {
+fn parse_attribute(reader: &mut Reader) -> Result<(String, String), XMLError> {
     let name = parse_name(reader)?;
 
     reader.skip_white_spaces();
@@ -265,7 +308,9 @@ fn parse_attribute(reader: &mut Reader) -> Result<Attribute, XMLError> {
     reader.skip_white_spaces();
 
     if reader.eob() {
-        return Err(XMLError::EndOfFile { when: "parsing an attribute" });
+        return Err(XMLError::EndOfFile {
+            when: "parsing an attribute",
+        });
     }
 
     let c = reader.read_byte();
@@ -274,14 +319,14 @@ fn parse_attribute(reader: &mut Reader) -> Result<Attribute, XMLError> {
         return Err(XMLError::Expecting {
             what: "'\"' or `'`",
             loc: reader.get_loc(),
-        })
+        });
     }
 
     let value = parse_text(reader, &[c])?;
 
     reader.raw_advance_n(1);
 
-    Ok(Attribute::new(name, value))
+    Ok((name, value))
 }
 
 // -- Document
@@ -322,7 +367,7 @@ impl Document {
         if is_open && is_element {
             stack.push(c);
 
-            return Ok(())
+            return Ok(());
         }
 
         if let Some(e) = stack.as_mut_slice().last_mut() {
@@ -330,7 +375,7 @@ impl Document {
                 Component::Element { children, .. } => children.push(c),
                 _ => {
                     return Err(XMLError::InternalError {
-                        what: "component in stack is not an element!"
+                        what: "component in stack is not an element!",
                     });
                 }
             }
@@ -393,37 +438,38 @@ impl Document {
                         _ => {
                             let loc0 = reader.get_loc();
 
-                            let attr = parse_attribute(&mut reader)?;
+                            let (name, value) = parse_attribute(&mut reader)?;
 
                             if attr_count == 0 {
-                                if attr.name != "version" {
+                                if name != "version" {
                                     return Err(XMLError::Expecting {
                                         what: "'version' attribute in xml declation",
                                         loc: loc0,
                                     });
                                 }
 
-                                version = attr.value;
+                                version = value;
                             } else if attr_count == 1 {
-                                if attr.name == "encoding" {
-                                    encoding = attr.value;
-                                } else if attr.name == "standalone" {
-                                    standalone = attr.value == "yes";
+                                if name == "encoding" {
+                                    encoding = value;
+                                } else if name == "standalone" {
+                                    standalone = value.as_str() == "yes";
                                     attr_count += 1;
                                 } else {
                                     return Err(XMLError::Expecting {
-                                        what: "'encoding' or 'standalone' attribute in xml declation",
+                                        what:
+                                            "'encoding' or 'standalone' attribute in xml declation",
                                         loc: loc0,
                                     });
                                 }
                             } else if attr_count == 2 {
-                                if attr.name != "standalone" {
+                                if name != "standalone" {
                                     return Err(XMLError::Expecting {
                                         what: "'standalone' attribute in xml declation",
                                         loc: loc0,
                                     });
                                 }
-                                standalone = attr.value == "yes";
+                                standalone = value.as_str() == "yes";
                             } else {
                                 return Err(XMLError::Invalid {
                                     what: "too many attributes in xml declation",
@@ -496,11 +542,13 @@ impl Document {
                 if c != b'>' {
                     return Err(XMLError::Expecting {
                         what: "'>' to be closing the tag end",
-                        loc: reader.get_loc(), 
+                        loc: reader.get_loc(),
                     });
                 }
 
                 reader.advance();
+
+                let removed_element;
 
                 if let Some(e) = stack.pop() {
                     match e {
@@ -519,17 +567,23 @@ impl Document {
                         }
                     }
 
-                    self.children.push(e);
+                    removed_element = e;
                 } else {
                     return Err(XMLError::Invalid {
                         what: "unexpected tag end found",
                         loc: loc0,
                     });
                 }
+
+                if stack.len() > 0 {
+                    self.add_component(removed_element, false, &mut stack)?;
+                } else {
+                    self.children.push(removed_element);
+                }
             } else if reader.sequece_match(b"<") {
                 reader.raw_advance_n(1);
 
-                let mut attributes = Vec::new();
+                let mut attributes = HashMap::new();
                 let name = parse_name(&mut reader)?;
 
                 loop {
@@ -572,8 +626,8 @@ impl Document {
                             break;
                         }
                         _ => {
-                            let attr = parse_attribute(&mut reader)?;
-                            attributes.push(attr);
+                            let (name, value) = parse_attribute(&mut reader)?;
+                            let _ = attributes.insert(name, value);
                         }
                     }
                 }
