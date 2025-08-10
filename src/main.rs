@@ -1,5 +1,6 @@
 pub mod csv;
 pub mod rl;
+pub mod xlsx;
 
 struct Buffer {
     data: [u8; 64],
@@ -97,6 +98,8 @@ const CELL_PAD: i32 = 3;
 const FONT_DATA: &[u8; 96964] = include_bytes!("../Inconsolata-Regular.ttf");
 const BOLD_FONT_DATA: &[u8; 102148] = include_bytes!("../Inconsolata-Bold.ttf");
 
+type CellMap = std::collections::HashMap<(usize, usize), String>;
+
 fn main() {
     if std::env::args().len() < 2 {
         println!("Usage: csvim FILENAME");
@@ -105,7 +108,13 @@ fn main() {
 
     let filepath = std::env::args().nth(1).unwrap();
 
-    let csv = csv::read_csv_file_as_hashmap(&filepath, ',', csv::Delimiter::DoubleQuote);
+    let map: CellMap = if filepath.ends_with(".xlsx") {
+        let xlsx = xlsx::read_xlsx_file_as_hashmap(&filepath, None);
+        xlsx.unwrap().map
+    } else {
+        let csv = csv::read_csv_file_as_hashmap(&filepath, ',', csv::Delimiter::DoubleQuote);
+        csv.map
+    };
 
     rl::set_config_flags(0x00000004 | 0x00000400);
     rl::init_window(200, 200, "csvim");
@@ -235,8 +244,7 @@ fn main() {
 
                 let search_string = search_buffer.iter().collect::<String>().to_lowercase();
 
-                matched_cells = csv
-                    .map
+                matched_cells = map
                     .iter()
                     .filter(|&(_, value)| value.to_lowercase().rfind(&search_string).is_some())
                     .map(|(&key, &_)| key)
@@ -352,7 +360,7 @@ fn main() {
             for i in 0..(column_count + 1) {
                 let pos = ((row_offset + j) as usize, (column_offset + i) as usize);
 
-                if let Some(value) = csv.map.get(&pos) {
+                if let Some(value) = map.get(&pos) {
                     let x = start_x + i * CELL_DEFAULT_WIDTH + CELL_PAD;
                     let y = start_y + j * cell_default_height;
 
@@ -405,7 +413,7 @@ fn main() {
         if !inserting {
             let pos = (current_cell_row as usize, current_cell_col as usize);
 
-            if let Some(value) = csv.map.get(&pos) {
+            if let Some(value) = map.get(&pos) {
                 let x =
                     start_x + (current_cell_col - column_offset) * CELL_DEFAULT_WIDTH + CELL_PAD;
                 let y = start_y + (current_cell_row - row_offset) * cell_default_height;
