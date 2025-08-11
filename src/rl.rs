@@ -189,6 +189,9 @@ unsafe extern "C" {
 
     fn SetTargetFPS(fps: i32);
 
+    fn LoadCodepoints(text: *const c_char, codepointCount: *mut c_int) -> *const c_int;
+    fn UnloadCodepoints(codepoint: *const c_int);
+
     fn LoadFontFromMemory(
         fileType: *const c_char,
         fileData: *const c_char,
@@ -476,8 +479,18 @@ impl Font {
         let data_len = data.len() as i32;
         let cstr = CString::new(".ttf").unwrap().into_raw();
 
+        let cp_text = CString::new("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789áàãâéêóôõíúüçÁÀÃÂÉÊÓÔÕÍÚÜÇ").unwrap().into_raw();
+
         let c_font =
-            unsafe { LoadFontFromMemory(cstr, data_ptr, data_len, size, std::ptr::null(), 0) };
+            unsafe {
+                let mut cp_count: c_int = 0;
+
+                let cp = LoadCodepoints(cp_text, &mut cp_count);
+                let f = LoadFontFromMemory(cstr, data_ptr, data_len, size, cp, cp_count);
+
+                UnloadCodepoints(cp);
+                f
+            };
 
         Self {
             c_font: c_font,

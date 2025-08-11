@@ -71,7 +71,7 @@ impl Buffer {
 
     // Adding UTF8 treatment
     fn write_str(&mut self, s: &str) {
-        for (i, c) in s.chars().enumerate() {
+        for (i, c) in s.bytes().enumerate() {
             if i >= self.data.len() {
                 break;
             }
@@ -95,7 +95,7 @@ const CELL_DEFAULT_WIDTH: i32 = 215;
 
 const CELL_PAD: i32 = 3;
 
-const FONT_DATA: &[u8; 96964] = include_bytes!("../Inconsolata-Regular.ttf");
+const FONT_DATA: &[u8; 101748] = include_bytes!("../Inconsolata-Regular.ttf");
 const BOLD_FONT_DATA: &[u8; 102148] = include_bytes!("../Inconsolata-Bold.ttf");
 
 type CellMap = std::collections::HashMap<(usize, usize), String>;
