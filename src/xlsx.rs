@@ -126,7 +126,6 @@ fn read_cells(content: Vec<u8>, shared_strings: Vec<String>) -> HashMap<(usize, 
                                     v.children_unchecked().iter().find_map(get_text).unwrap_or(String::new());
 
                                 let cell_value = if let Some(t) = attributes.get("t") {
-                                    println!("{}: {}", t, text);
                                     if t == "n" || t == "str" {
                                         text.clone()
                                     } else if t == "b" {

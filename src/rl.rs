@@ -479,7 +479,7 @@ impl Font {
         let data_len = data.len() as i32;
         let cstr = CString::new(".ttf").unwrap().into_raw();
 
-        let cp_text = CString::new("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789áàãâéêóôõíúüçÁÀÃÂÉÊÓÔÕÍÚÜÇ").unwrap().into_raw();
+        let cp_text = CString::new("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789áàãâéêóôõíúüçÁÀÃÂÉÊÓÔÕÍÚÜÇ*,.;:!?@#$%&&+=-_|/\\'\"()[]{}<>°ªº~§^").unwrap().into_raw();
 
         let c_font =
             unsafe {
