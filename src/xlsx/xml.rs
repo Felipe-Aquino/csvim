@@ -267,6 +267,14 @@ fn parse_name(reader: &mut Reader) -> Result<String, XMLError> {
     Ok(v.unwrap().to_string())
 }
 
+static ENTITIES: [(&[u8], u8); 5] = [
+    (b"&quot;", b'"'),
+    (b"&amp;", b'&'),
+    (b"&apos;", b'\''),
+    (b"&lt;", b'<'),
+    (b"&gt;", b'>')
+];
+
 fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, XMLError> {
     if end_marker.len() == 0 {
         return Err(XMLError::EndOfFile {
@@ -274,14 +282,37 @@ fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, XMLError
         });
     }
 
-    let start = reader.cursor;
+    let mut result = Vec::new();
 
     while !reader.eob() {
         if reader.sequece_match(end_marker) {
-            let v = str::from_utf8(reader.data[start..reader.cursor].into());
+            let v = str::from_utf8(&result);
 
             return Ok(v.unwrap().to_string());
         }
+
+        let b = reader.peek_byte();
+
+        if b == b'&' {
+            let mut found = false;
+
+            for (value, replacement) in ENTITIES {
+                if reader.sequece_match(value) {
+                    result.push(replacement);
+
+                    reader.raw_advance_n(value.len());
+                    found = true;
+                    break;
+                }
+            }
+
+            if found {
+                continue;
+            }
+            // NOTE: Maybe return an error if entity was not found
+        }
+
+        result.push(b);
 
         reader.advance();
     }

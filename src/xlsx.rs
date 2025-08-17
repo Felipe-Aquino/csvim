@@ -176,7 +176,7 @@ pub fn read_xlsx_file_as_hashmap(
     filename: &str,
     worksheet_name: Option<&str>,
 ) -> Result<XLSXMap, ()> {
-    let zip = zip::Zip::from_file("file.xlsx").unwrap();
+    let zip = zip::Zip::from_file(filename).unwrap();
 
     let files = zip.extract_files().map_err(|e| {
         eprintln!("{:?}", e);
