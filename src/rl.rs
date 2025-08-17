@@ -481,16 +481,15 @@ impl Font {
 
         let cp_text = CString::new("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789áàãâéêóôõíúüçÁÀÃÂÉÊÓÔÕÍÚÜÇ*,.;:!?@#$%&&+=-_|/\\'\"()[]{}<>°ªº~§^").unwrap().into_raw();
 
-        let c_font =
-            unsafe {
-                let mut cp_count: c_int = 0;
+        let c_font = unsafe {
+            let mut cp_count: c_int = 0;
 
-                let cp = LoadCodepoints(cp_text, &mut cp_count);
-                let f = LoadFontFromMemory(cstr, data_ptr, data_len, size, cp, cp_count);
+            let cp = LoadCodepoints(cp_text, &mut cp_count);
+            let f = LoadFontFromMemory(cstr, data_ptr, data_len, size, cp, cp_count);
 
-                UnloadCodepoints(cp);
-                f
-            };
+            UnloadCodepoints(cp);
+            f
+        };
 
         Self {
             c_font: c_font,

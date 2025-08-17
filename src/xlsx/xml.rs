@@ -272,7 +272,7 @@ static ENTITIES: [(&[u8], u8); 5] = [
     (b"&amp;", b'&'),
     (b"&apos;", b'\''),
     (b"&lt;", b'<'),
-    (b"&gt;", b'>')
+    (b"&gt;", b'>'),
 ];
 
 fn parse_text(reader: &mut Reader, end_marker: &[u8]) -> Result<String, XMLError> {

@@ -122,8 +122,11 @@ fn read_cells(content: Vec<u8>, shared_strings: Vec<String>) -> HashMap<(usize, 
                     match c {
                         xml::Component::Element { attributes, .. } => {
                             if attributes.contains_key("r") && attributes.contains_key("t") {
-                                let text =
-                                    v.children_unchecked().iter().find_map(get_text).unwrap_or(String::new());
+                                let text = v
+                                    .children_unchecked()
+                                    .iter()
+                                    .find_map(get_text)
+                                    .unwrap_or(String::new());
 
                                 let cell_value = if let Some(t) = attributes.get("t") {
                                     if t == "n" || t == "str" {
@@ -199,7 +202,10 @@ pub fn read_xlsx_file_as_hashmap(
         ws_name = format!("xl/worksheets/{ws}.xml");
 
         files.iter().find(|f| f.name == ws_name).map(|f| &f.content)
-    } else if let Some(f) = files.iter().find(|f| f.name.starts_with("xl/worksheets/")) {
+    } else if let Some(f) = files
+        .iter()
+        .find(|f| f.name.starts_with("xl/worksheets/") && f.name.ends_with(".xml"))
+    {
         ws_name = f.name.clone();
 
         Some(&f.content)
