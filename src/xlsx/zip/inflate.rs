@@ -3,6 +3,10 @@
 //
 // Why? Because I don't want to include several dependencies to this project.
 // And it's not easy to understand what's happening in zlib only by reading the source code.
+//
+// An explanation about the deflate can be found in:
+//    https://www.youtube.com/watch?v=SJPvNi4HrWQ&t=22s
+//
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -1033,8 +1037,8 @@ fn read_block_type2(stream: &mut Bitstream, bytes_window: &mut Vec<u8>) -> Resul
 }
 
 fn read_block_type0(stream: &mut Bitstream, bytes_window: &mut Vec<u8>) -> Result<(), String> {
-    // These bits are ignored
-    let _ = stream.readbits(5)?;
+    // skip any remaining bits in current partially processed byte
+    let _ = stream.readbits(stream.bit_buff_count % 8)?;
 
     let len = stream.readbits(16)?;
     let nlen = stream.readbits(16)?;
